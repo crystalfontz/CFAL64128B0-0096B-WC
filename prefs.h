@@ -7,8 +7,13 @@
 //
 //==============================================================================
 
-//select oled display SPI *or* I2C interface
-//(in this example touch interface always uses I2C)
+//The BS1 pin on the module selects display I2C or SPI interface mode:
+// SPI: BS1 = low (gnd)
+// I2C: BS1 = high (3.3v)
+//(in this example the touch interface always uses I2C)
+
+//The setting below must correspond to the BS1 interface selection.
+
 #define OLED_SPI
 //#define OLED_I2C
 
