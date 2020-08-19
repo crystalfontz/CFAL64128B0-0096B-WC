@@ -17,10 +17,20 @@
 #define SSD7317_TOUCH_SDA_SET	digitalWrite(SSD7317_TOUCH_SDA, HIGH)
 // #define SSD7317_TOUCH_SDA_RD	digitalRead(SSD7317_TOUCH_SDA) /*this is a function*/
 
+typedef struct
+{
+	uint8_t Act;
+	uint8_t Detail;
+	uint8_t StartEnd;
+	uint8_t Reserved;
+	uint8_t Location;
+} SSD7317_InTouch_t;
+
 //////////////////////////////////////////////
 
 extern volatile bool SSD7317_TouchData_Waiting;
-extern volatile uint16_t SSD7317_Gesture_Data;
+extern volatile SSD7317_InTouch_t SSD7317_Gesture_Data;
+extern volatile uint8_t SSD7317_Raw_Data[6];
 
 void SSD7317_Touch_Init(void);
 void SSD7317_Touch_HWI2C(bool enable);

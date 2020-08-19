@@ -72,13 +72,11 @@ void PrintString(uint8_t x, uint8_t y, const char *str);
 #define TIMER_SET(var,time_ms)		(var) = SYS_TICK + ((time_ms) * SYS_TICKSPEED);
 
 //touch display types
-typedef enum
-{
-	TOUCH_NONE = 0,
-	TOUCH_KEY = 1,
-	TOUCH_HOLD = 2,
-	TOUCH_SWIPE = 4,
-} TouchTypes_t;
+#define TOUCH_NONE 0
+#define TOUCH_TAP 1
+#define TOUCH_HOLD 2
+#define TOUCH_DTAP 3
+#define TOUCH_SWIPE 4
 
 //////////////////////////////////////////////////////////
 
@@ -130,80 +128,52 @@ void UpdateBlankLines(void)
 	memset(OLEDBuf+(96*8), 0xFF, 8);
 }
 
-void UpdateForNone(void)
+void PrintKeyState(uint8_t Key, const char *State, uint8_t YLoc)
 {
-	//blank display & draw 4 div key lines
-	UpdateBlankLines();
-	//print key names on display
-	PrintString(1,00+12, "KEY  1");
-	PrintString(1,32+12, "KEY  2");
-	PrintString(1,64+12, "KEY  3");
-	PrintString(1,96+12, "KEY  4");
-	//write buffer to oled
-	SSD7317_OLED_WriteBuffer(OLEDBuf);
+	//print key state text on oled
+	char OutStr[8];
+	uint8_t TextOfs;
+	memset(OutStr, ' ', 8);
+	memcpy(OutStr, State, 4);
+	OutStr[5] = Key + '0';
+	OutStr[6] = 0;
+	if (YLoc == 0xFF)
+		TextOfs = ((Key - 1) * 32) + 12;
+	else
+		TextOfs = YLoc;
+	PrintString(1, TextOfs, OutStr);
 }
 
-void UpdateForKey(uint8_t Key)
+void PrintKeyNames(uint8_t Act, uint8_t Detail)
 {
-	uint8_t i;
-	//blank display & draw 4 div key lines
-	UpdateBlankLines();
-	//a key has been pressed
+	//print key names on display
+	const char ActStrings[4][5] = {"KEY ", "TAP ", "HOLD", "DTAP"};
+
+	PrintKeyState(1, ActStrings[0], 0xFF);
+	PrintKeyState(2, ActStrings[0], 0xFF);
+	PrintKeyState(3, ActStrings[0], 0xFF);
+	PrintKeyState(4, ActStrings[0], 0xFF);
+	if (Detail == 0)
+		//nothing more to do
+		return;
+	//act/detail string
+	PrintKeyState(Detail, ActStrings[Act], 0xFF);
+}
+
+void HighlightKey(uint8_t Key)
+{
 	//highlight the key square on the display
 	uint8_t *OLEDBuf_Offset = OLEDBuf + ((Key - 1) * 32 * 8);
-	for (i = 0; i < 31; i++)
+	for (uint8_t i = 0; i < 31; i++)
 		if (i % 2)
 			memset(OLEDBuf_Offset+(i*8), 0xAA, 8);
 		else
 			memset(OLEDBuf_Offset+(i*8), 0x55, 8);
-	//print key names on display
-	PrintString(1,00+12, "KEY  1");
-	PrintString(1,32+12, "KEY  2");
-	PrintString(1,64+12, "KEY  3");
-	PrintString(1,96+12, "KEY  4");
-	//write buffer to oled
-	SSD7317_OLED_WriteBuffer(OLEDBuf);
 }
 
-void UpdateForHold(uint8_t Key)
+void UpdateForSwipe(uint8_t Detail)
 {
 	uint8_t i;
-	//blank display & draw 4 div key lines
-	UpdateBlankLines();
-	//a key has been held
-	//highlight the key square on the display
-	uint8_t *OLEDBuf_Offset = OLEDBuf + ((Key - 1) * 32 * 8);
-	for (i = 0; i < 31; i++)
-		if (i % 2)
-			memset(OLEDBuf_Offset+(i*8), 0xAA, 8);
-		else
-			memset(OLEDBuf_Offset+(i*8), 0x55, 8);
-	//a key has been held, chnage the text for that row
-	if (Key == 1)
-		PrintString(1,00+12, "HOLD 1");
-	else
-		PrintString(1,00+12, "KEY  1");
-	if (Key == 2)
-		PrintString(1,32+12, "HOLD 2");
-	else
-		PrintString(1,32+12, "KEY  2");
-	if (Key == 3)
-		PrintString(1,64+12, "HOLD 3");
-	else
-		PrintString(1,64+12, "KEY  3");
-	if (Key == 4)
-		PrintString(1,96+12, "HOLD 4");
-	else
-		PrintString(1,96+12, "KEY  4");
-	//write buffer to oled
-	SSD7317_OLED_WriteBuffer(OLEDBuf);
-}
-
-void UpdateForSwipe(uint8_t Key)
-{
-	uint8_t i;
-	//blank display & draw 4 div key lines
-	UpdateBlankLines();
 	//display has been swiped / dragged
 	//draw a line down the middle of the display
 	memset(OLEDBuf, 0x00, sizeof(OLEDBuf));
@@ -219,12 +189,84 @@ void UpdateForSwipe(uint8_t Key)
 	}
 	//draw swipe text
 	PrintString(1,54, "SWIPED");
-	if (Key == 1)
+	if (Detail == 1)
 		PrintString(2,54+10, "DOWN");
 	else
 		PrintString(3,54+10, "UP");
-	//write buffer to oled
-	SSD7317_OLED_WriteBuffer(OLEDBuf);
+}
+
+void ExternalPress(uint8_t Act, uint8_t Detail)
+{
+	//external (outcell) press/hold
+	const char ActStrings[4][5] = {"KEY ", "TAP ", "HOLD", "DTAP"};
+
+	memset(OLEDBuf, 0x00, sizeof(OLEDBuf));
+	PrintString(0,20, "EXTERNAL");
+	PrintString(0,35, "OUTCELL");
+
+	//act/detail string
+	PrintKeyState(Detail, ActStrings[Act], 60);
+}
+
+void UpdateDisplay(bool Activity)
+{
+	if (Activity == false)
+	{
+		//nothing happening
+		UpdateBlankLines();
+		PrintKeyNames(0, 0);
+		SSD7317_OLED_WriteBuffer(OLEDBuf);
+		return;
+	}
+
+	if ((SSD7317_Gesture_Data.Act == TOUCH_TAP) ||
+		(SSD7317_Gesture_Data.Act == TOUCH_HOLD) ||
+		(SSD7317_Gesture_Data.Act == TOUCH_DTAP))
+	{
+		//key tapped, held or double-pressed
+		if (SSD7317_Gesture_Data.Location == 0)
+		{
+			//oled/incell activity
+			UpdateBlankLines();
+			HighlightKey(SSD7317_Gesture_Data.Detail);
+			PrintKeyNames(SSD7317_Gesture_Data.Act, SSD7317_Gesture_Data.Detail);
+		}
+		if (SSD7317_Gesture_Data.Location == 2)
+		{
+			//external/outcell activity
+			ExternalPress(SSD7317_Gesture_Data.Act, SSD7317_Gesture_Data.Detail);
+		}
+		SSD7317_OLED_WriteBuffer(OLEDBuf);
+		return;
+	}
+
+	if (SSD7317_Gesture_Data.Act == TOUCH_SWIPE)
+	{
+		//display swiped
+		UpdateForSwipe(SSD7317_Gesture_Data.Detail);
+		SSD7317_OLED_WriteBuffer(OLEDBuf);
+		return;
+	}
+}
+
+void SerialLogTouch(void)
+{
+	const char	TouchActs[][8] = {"na", "tap", "hold", "dbltap", "swipe"};
+	const char	Location[][8] = {"oled", "na", "ext", "na"};
+
+	//log the touch to serial
+	Serial.print("Touched = location-"); Serial.print(Location[SSD7317_Gesture_Data.Location & 0x02] );
+	Serial.print(" act-"); Serial.print(TouchActs[SSD7317_Gesture_Data.Act]);
+	Serial.print(" detail-"); Serial.print(SSD7317_Gesture_Data.Detail);
+	Serial.print(" in-"); Serial.print((SSD7317_Gesture_Data.StartEnd >> 4) & 0x07);
+	Serial.print(" out-"); Serial.print(SSD7317_Gesture_Data.StartEnd & 0x07);
+	Serial.print(" raw-");
+	for (int i = 0; i < 6; i++)
+	{
+		Serial.print(SSD7317_Raw_Data[i], 16);
+		Serial.print(".");
+	}
+	Serial.println("");
 }
 
 //main program loop
@@ -233,12 +275,11 @@ void loop()
 	//main loop
 	Serial.println("loop()");
 
-	uint32_t		DispTimer;
-	TouchTypes_t	LastTouchType = TOUCH_NONE;
-	uint8_t			LastTouchKey = 0;
+	uint32_t	DispTimer;
+	uint8_t		LastTouchType = TOUCH_NONE;
 
 	//first display update
-	UpdateForNone();
+	UpdateDisplay(false);
 
 	while(1)
 	{
@@ -250,38 +291,18 @@ void loop()
 			//this also resets SSD7317_TouchData_Waiting flag var
 			SSD7317_Touch_Handle();
 
-			//log the touch to serial
-			Serial.print("Touched = type-");
-			Serial.print((SSD7317_Gesture_Data >> 8) & 0xFF, 16);
-			Serial.print(" key-");
-			Serial.println(SSD7317_Gesture_Data & 0xFF, 16);
+			//serial log
+			SerialLogTouch();
 
 			//check for a new touch
 			if (LastTouchType == TOUCH_NONE)
 			{
 				//new touch
-				LastTouchType = (TouchTypes_t)((SSD7317_Gesture_Data >> 8) & 0xFF);
-				LastTouchKey = SSD7317_Gesture_Data & 0xFF;
+				LastTouchType = SSD7317_Gesture_Data.Act;
 				//start display timer
-				TIMER_SET(DispTimer, 750); //750mS
+				TIMER_SET(DispTimer, 600); //display touch for x msec
 				//update display with appropriate touch type
-				switch (LastTouchType)
-				{
-					case TOUCH_KEY:
-						UpdateForKey(LastTouchKey);
-						break;
-					case TOUCH_HOLD:
-						UpdateForHold(LastTouchKey);
-						break;
-					case TOUCH_SWIPE:
-						UpdateForSwipe(LastTouchKey);
-						break;
-					case TOUCH_NONE:
-					default:
-						//shouldnt happen
-						LastTouchType = TOUCH_NONE;
-						break;
-				}
+				UpdateDisplay(true);
 			}
 		}
 
@@ -292,9 +313,8 @@ void loop()
 			{
 				//reset touch type/key
 				LastTouchType = TOUCH_NONE;
-				LastTouchKey = 0;
 				//draw untouched normal screen
-				UpdateForNone();
+				UpdateDisplay(false);
 			}
 		}
 	}

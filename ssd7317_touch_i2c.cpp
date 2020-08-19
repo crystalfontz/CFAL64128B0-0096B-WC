@@ -74,7 +74,8 @@ static void SSD7317_Touch_IRQ(void);
 static void SSD7317_Touch_Process(uint8_t *data);
 uint16_t SSD7317_TIC_CPU_BurstRead(uint16_t address, uint8_t data[], uint16_t num);
 
-volatile uint16_t SSD7317_Gesture_Data = 0;
+volatile SSD7317_InTouch_t SSD7317_Gesture_Data;
+volatile uint8_t SSD7317_Raw_Data[6];
 volatile bool SSD7317_TIC_UseHardwareI2C = false;
 volatile bool SSD7317_TouchData_Waiting = false;
 
@@ -144,23 +145,28 @@ static void SSD7317_Touch_Process(uint8_t *data)
 	//make the two bytes of touch data useable
 	if (data[0] != 0xF6)
 		return;
+	//is touch data, record it
+	memcpy((void*)&SSD7317_Gesture_Data, &data[1], 5);
+	memcpy((void*)SSD7317_Raw_Data, data, 6);
 
+	/* not used here
 	if (data[1] == 0x04)
 	{
 		if (data[5] == 0x00)
 		{
-			//incell
+			//incell (on oled)
 			SSD7317_Gesture_Data = (data[1] << 8) | data[2];
 		}
 		else
 			if (data[5] == 0x01)
 			{
-				//outcell
+				//outcell (external cap-touch)
 				SSD7317_Gesture_Data = (data[1] + data[2]) << 8 | (data[3] & 0x07);
 			}
 	}
 	else
 		SSD7317_Gesture_Data = (data[1] << 8) | data[2];
+	*/
 }
 
 void SSD7317_Touch_Handle(void)
