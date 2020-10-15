@@ -1,10 +1,10 @@
-# CFAL64128A0-096B-WC
-Crystalfontz CFAL64128A0-096B-WC - Tiny OLED with Capacitive Touch
+# CFAL64128B0-0096B-WC
+Crystalfontz CFAL64128B0-0096B-WC - Tiny OLED with Capacitive Touch
 
 Example Seeeduino (Arduino Clone) Software.
 
 This product can be found here:
-https://www.crystalfontz.com/product/cfal64128a0096bwc
+https://www.crystalfontz.com/product/cfal64128b00096bwc
 
 ## Connection Details
 ### Display using SPI interface
