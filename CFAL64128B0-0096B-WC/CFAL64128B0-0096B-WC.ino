@@ -1,17 +1,17 @@
 //==============================================================================
 //
-//  CRYSTALFONTZ CFAL64128A0-096B-WC EXAMPLE FIRMWARE
+//  CRYSTALFONTZ CFAL64128B0-0096B-WC EXAMPLE FIRMWARE
 //
 //  Code written for Seeeduino v4.2 set to 3.3v (important!)
 //
 //  This code uses interfaces:
 //    OLED Display     = 4-wire SPI or I2C (selectable in prefs.h)
-//    Touch Controller = I2C
+//    Touch Controller = 4-wire SPI or I2C (selectable in prefs.h)
 //
 //  The OLED/Touch controller is a Sitronix SSD7317
 //
-//  The OLED and touch controllers are in the same IC, but are for the most
-//  part treated like two separate IC's.
+//  The OLED and touch controllers are in the same IC in the panel, but are
+//   for the most part treated like two separate IC's.
 //
 //  Seeeduino v4.2, an open-source 3.3v capable Arduino clone.
 //    https://www.seeedstudio.com/Seeeduino-V4.2-p-2517.html
@@ -53,6 +53,7 @@
 #include "prefs.h"
 #include "ssd7317_oled_i2c.h"
 #include "ssd7317_touch_i2c.h"
+#include "ssd7317_touch_spi.h"
 #include "font_8x8x1.h"
 
 //////////////////////////////////////////////////////////
@@ -110,10 +111,12 @@ void setup()
 	SSD7317_Touch_Init();
 
 	//now use hardware i2c for touch
+#ifdef TOUCH_I2C
 	Wire.begin();
 	SSD7317_Touch_HWI2C(true);
 	//kick the i2c speed up to 400kHz
 	Wire.setClock(400000);
+#endif
 
 	//done inits
 	Serial.println("setup() done");
@@ -157,7 +160,8 @@ void PrintKeyNames(uint8_t Act, uint8_t Detail)
 		//nothing more to do
 		return;
 	//act/detail string
-	PrintKeyState(Detail, ActStrings[Act], 0xFF);
+	if (Act < 4)
+		PrintKeyState(Detail, ActStrings[Act], 0xFF);
 }
 
 void HighlightKey(uint8_t Key)
@@ -251,21 +255,19 @@ void UpdateDisplay(bool Activity)
 
 void SerialLogTouch(void)
 {
-	const char	TouchActs[][8] = {"na", "tap", "hold", "dbltap", "swipe"};
-	const char	Location[][8] = {"oled", "na", "ext", "na"};
+	const char	TouchActs[5][8] = {"na", "tap", "hold", "dbltap", "swipe"};
+	const char	Location[4][8] = {"oled", "na", "ext", "na"};
 
 	//log the touch to serial
 	Serial.print("Touched = location-"); Serial.print(Location[SSD7317_Gesture_Data.Location & 0x02] );
-	Serial.print(" act-"); Serial.print(TouchActs[SSD7317_Gesture_Data.Act]);
+	Serial.print(" act-");
+	if (SSD7317_Gesture_Data.Act < 5)
+		Serial.print(TouchActs[SSD7317_Gesture_Data.Act]);
+	else
+		Serial.print(SSD7317_Gesture_Data.Act);
 	Serial.print(" detail-"); Serial.print(SSD7317_Gesture_Data.Detail);
 	Serial.print(" in-"); Serial.print((SSD7317_Gesture_Data.StartEnd >> 4) & 0x07);
 	Serial.print(" out-"); Serial.print(SSD7317_Gesture_Data.StartEnd & 0x07);
-	Serial.print(" raw-");
-	for (int i = 0; i < 6; i++)
-	{
-		Serial.print(SSD7317_Raw_Data[i], 16);
-		Serial.print(".");
-	}
 	Serial.println("");
 }
 
