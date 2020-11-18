@@ -106,8 +106,9 @@ void SSD7317_Touch_Init(void)
 	SSD7317_Touch_Setup();
 
 	//more touch settings
-	SSD7317_NM_GestureEnable(0b100001111); //all gestures enabled
-	SSD7317_TouchThreshold_Set(200); //default sensitivity
+	//SSD7317_NM_GestureEnable(0b100001111); //all gestures enabled
+	//SSD7317_TouchThreshold_Set(200); //default sensitivity
+	//we dont need to touch these
 
 	//setup interrupt handler for touches
 	attachInterrupt(digitalPinToInterrupt(SSD7317_TOUCH_IRQ), SSD7317_Touch_IRQ, FALLING);
