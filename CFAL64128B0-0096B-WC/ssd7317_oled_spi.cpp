@@ -1,6 +1,6 @@
 //==============================================================================
 //
-//  CRYSTALFONTZ CFAL64128A0-096B-WC EXAMPLE FIRMWARE
+//  CRYSTALFONTZ CFAL64128B0-0096B-WC EXAMPLE FIRMWARE
 //
 //  OLED DISPLAY SPI INTERFACE FIRMWARE
 //

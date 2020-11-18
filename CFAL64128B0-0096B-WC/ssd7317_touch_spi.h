@@ -2,7 +2,7 @@
 
 #include "prefs.h"
 
-#ifdef TOUCH_I2C
+#ifdef TOUCH_SPI
 
 #include <Arduino.h>
 
@@ -35,6 +35,7 @@ typedef struct
 
 extern volatile bool SSD7317_TouchData_Waiting;
 extern volatile SSD7317_InTouch_t SSD7317_Gesture_Data;
+extern volatile uint8_t SSD7317_Raw_Data[6];
 
 void SSD7317_Touch_Init(void);
 void SSD7317_Touch_HWI2C(bool enable);
