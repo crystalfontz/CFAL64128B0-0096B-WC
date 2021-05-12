@@ -11,7 +11,7 @@
 //  The OLED/Touch controller is a Sitronix SSD7317
 //
 //  The OLED and touch controllers are in the same IC in the panel, but are
-//   for the most part treated like two separate IC's.
+//   for the most part treated as two separate IC's.
 //
 //  Seeeduino v4.2, an open-source 3.3v capable Arduino clone.
 //    https://www.seeedstudio.com/Seeeduino-V4.2-p-2517.html
