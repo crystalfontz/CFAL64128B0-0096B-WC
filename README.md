@@ -6,9 +6,14 @@ Example Seeeduino (Arduino Clone) Software.
 This product can be found here:
 https://www.crystalfontz.com/product/cfal64128b00096bwc
 
+This display can also be purchased on a breakout board:
+https://www.crystalfontz.com/product/cfal64128b00096wce1
+Or as a full development kit:
+https://www.crystalfontz.com/product/cfal64128b00096wce12
+
 ## Display Connection Details
 
-By default the "prefs.h" file is configured for I2C display & touch interfaces.
+By default the "prefs.h" file is configured for I2C touch and SPI display interfaces.
 You'll need to edit the file if using a different interface configuration.
 
 ### Display using SPI interface
