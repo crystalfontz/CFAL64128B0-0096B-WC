@@ -2,7 +2,7 @@
 //
 //  CRYSTALFONTZ CFAL64128B0-0096B-WC EXAMPLE FIRMWARE
 //
-//  Code written for Seeeduino v4.2 set to 3.3v (important!)
+//  Code written for Seeeduino set to 3.3v (important!)
 //
 //  This code uses interfaces:
 //    OLED Display     = 4-wire SPI or I2C (selectable in prefs.h)
@@ -12,10 +12,6 @@
 //
 //  The OLED and touch controllers are in the same IC in the panel, but are
 //   for the most part treated as two separate IC's.
-//
-//  Seeeduino v4.2, an open-source 3.3v capable Arduino clone.
-//    https://www.seeedstudio.com/Seeeduino-V4.2-p-2517.html
-//    https://github.com/SeeedDocument/SeeeduinoV4/raw/master/resources/Seeeduino_v4.2_sch.pdf
 //
 //==============================================================================
 //
@@ -51,9 +47,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "prefs.h"
-#include "ssd7317_oled_i2c.h"
-#include "ssd7317_touch_i2c.h"
-#include "ssd7317_touch_spi.h"
+#include "ssd7317_oled.h"
+#include "ssd7317_touch.h"
 #include "font_8x8x1.h"
 
 //////////////////////////////////////////////////////////

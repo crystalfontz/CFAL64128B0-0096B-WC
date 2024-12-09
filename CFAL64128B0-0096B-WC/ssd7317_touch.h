@@ -2,12 +2,11 @@
 
 #include "prefs.h"
 
-#ifdef TOUCH_I2C
 
 #include <Arduino.h>
 
 //////////////////////////////////////////////
-
+#ifdef TOUCH_I2C
 //touch CS
 #define SSD7317_TOUCH_CS_CLR	digitalWrite(SSD7317_TOUCH_CS, LOW)
 #define SSD7317_TOUCH_CS_SET	digitalWrite(SSD7317_TOUCH_CS, HIGH)
@@ -20,6 +19,8 @@
 #define SSD7317_TOUCH_SDA_CLR	digitalWrite(SSD7317_TOUCH_SDA, LOW)
 #define SSD7317_TOUCH_SDA_SET	digitalWrite(SSD7317_TOUCH_SDA, HIGH)
 // #define SSD7317_TOUCH_SDA_RD	digitalRead(SSD7317_TOUCH_SDA) /*this is a function*/
+#endif
+//////////////////////////////////////////////
 
 typedef struct
 {
@@ -35,9 +36,14 @@ typedef struct
 
 extern volatile bool SSD7317_TouchData_Waiting;
 extern volatile SSD7317_InTouch_t SSD7317_Gesture_Data;
+#ifdef TOUCH_SPI
+extern volatile uint8_t SSD7317_Raw_Data[6];
+#endif
 
 void SSD7317_Touch_Init(void);
+#ifdef TOUCH_I2C
 void SSD7317_Touch_HWI2C(bool enable);
+#endif
 void SSD7317_Touch_Handle(void);
 
 //touch feature settings
@@ -49,5 +55,3 @@ void SSD7317_SingleTap_MaxFrames_Set(uint16_t frames);
 void SSD7317_SkipFrames_AfterGestureReport(uint16_t frames);
 void SSD7317_LPM_ScanRate_Set(uint16_t rate);
 void SSD7317_ReportingMode_Set(uint16_t mode);
-
-#endif

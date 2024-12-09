@@ -2,7 +2,7 @@
 //
 //  CRYSTALFONTZ CFAL64128B0-0096B-WC EXAMPLE FIRMWARE
 //
-//  OLED DISPLAY I2C INTERFACE FIRMWARE
+//  OLED DISPLAY SPI INTERFACE FIRMWARE
 //
 //  Code written for Seeeduino v4.2 set to 3.3v (important!)
 //
@@ -44,26 +44,62 @@
 //==============================================================================
 
 #include "prefs.h"
-
-#ifdef OLED_I2C
-
 #include <Arduino.h>
+
+#ifdef OLED_SPI
+#include <SPI.h>
+#define SSD7317_OLED_DC_CMD			(0)
+#define SSD7317_OLED_DC_DATA		(1)
+#endif
+#ifdef OLED_I2C
 #include <Wire.h>
-#include "ssd7317_oled_i2c.h"
+#endif
+
+#include "ssd7317_oled.h"
 
 //////////////////////////////////////////////////////////
 
-#define SSD7317_OLED_DC_CMD			(0)
-#define SSD7317_OLED_DC_DATA		(1)
 
 static void SSD7317_OLED_Setup();
+
+//TODO Can this be pushed into the .h file?
+#ifdef OLED_SPI
+static void SSD7317_OLED_DISP_SPI4_WR(unsigned char data, unsigned char DC);
+#endif
+#ifdef OLED_I2C
 static void SSD7317_OLED_WR_CMD(unsigned char command);
+#endif
 
 //////////////////////////////////////////////////////////
 
 void SSD7317_OLED_Init(void)
 {
-	Serial.println("SSD7317_OLED_Init() I2C");
+	Serial.print("SSD7317_OLED_Init()");
+#ifdef OLED_SPI
+	Serial.println(" SPI");
+
+	//pin setup
+	digitalWrite(SSD7317_OLED_SPI_CS, HIGH);
+	pinMode(SSD7317_OLED_SPI_CS, OUTPUT);
+	digitalWrite(SSD7317_OLED_SPI_DC, HIGH);
+	pinMode(SSD7317_OLED_SPI_DC, OUTPUT);
+	digitalWrite(SSD7317_OLED_RST, HIGH);
+	pinMode(SSD7317_OLED_RST, OUTPUT);
+
+	//spi setup
+	SPI.begin();
+	SPI.beginTransaction(SPISettings(SSD7317_OLED_SPI_FREQ, MSBFIRST, SPI_MODE0));
+
+	//reset
+	digitalWrite(SSD7317_OLED_RST, LOW);
+	delay(10);
+	digitalWrite(SSD7317_OLED_RST, HIGH);
+	delay(10);
+
+#endif
+#ifdef OLED_I2C
+	Serial.println(" I2C");
+
 	//pin setup
 	digitalWrite(SSD7317_OLED_RST, HIGH); //reset pin
 	pinMode(SSD7317_OLED_RST, OUTPUT);
@@ -77,6 +113,7 @@ void SSD7317_OLED_Init(void)
 	//I2C init
 	Wire.begin();
 
+#endif
 	//run setup commands
 	SSD7317_OLED_Setup();
 
@@ -84,9 +121,28 @@ void SSD7317_OLED_Init(void)
 	SSD7317_OLED_Blank();
 }
 
-#define SEGS 16
 void SSD7317_OLED_WriteBuffer(uint8_t *buf)
 {
+#ifdef OLED_SPI
+	SSD7317_OLED_DISP_SPI4_WR(0x21, SSD7317_OLED_DC_CMD);		//col address
+	SSD7317_OLED_DISP_SPI4_WR(0x00, SSD7317_OLED_DC_CMD);
+	SSD7317_OLED_DISP_SPI4_WR(0x7F, SSD7317_OLED_DC_CMD);
+
+	SSD7317_OLED_DISP_SPI4_WR(0x22, SSD7317_OLED_DC_CMD);		//page address
+	SSD7317_OLED_DISP_SPI4_WR(0x00, SSD7317_OLED_DC_CMD);
+	SSD7317_OLED_DISP_SPI4_WR(0x07, SSD7317_OLED_DC_CMD);		//128x64
+
+	//setup D/C# bit
+	digitalWrite(SSD7317_OLED_SPI_DC, SSD7317_OLED_DC_DATA);
+	//setup CS
+	digitalWrite(SSD7317_OLED_SPI_CS, LOW);
+	//send data
+	SPI.transfer(buf, SSD7317_OLED_HEIGHT * SSD7317_OLED_WIDTH / 8);
+	//done
+	digitalWrite(SSD7317_OLED_SPI_CS, HIGH);
+#endif
+#ifdef OLED_I2C
+	#define SEGS 16
 	uint16_t i, j;
 	for (i = 0; i < ( SSD7317_OLED_HEIGHT * SSD7317_OLED_WIDTH / 8) / SEGS ; i++)
 	{
@@ -105,10 +161,33 @@ void SSD7317_OLED_WriteBuffer(uint8_t *buf)
 		Wire.write(&buf[j], SEGS);
 		Wire.endTransmission();
 	}
+#endif
 }
 
 void SSD7317_OLED_Blank(void)
 {
+#ifdef OLED_SPI
+	//blank the display
+	SSD7317_OLED_DISP_SPI4_WR(0x21, SSD7317_OLED_DC_CMD);		//col address
+	SSD7317_OLED_DISP_SPI4_WR(0x00, SSD7317_OLED_DC_CMD);
+	SSD7317_OLED_DISP_SPI4_WR(0x7F, SSD7317_OLED_DC_CMD);
+
+	SSD7317_OLED_DISP_SPI4_WR(0x22, SSD7317_OLED_DC_CMD);		//page address
+	SSD7317_OLED_DISP_SPI4_WR(0x00, SSD7317_OLED_DC_CMD);
+	SSD7317_OLED_DISP_SPI4_WR(0x07, SSD7317_OLED_DC_CMD);		//128x64
+
+	//setup D/C# bit
+	digitalWrite(SSD7317_OLED_SPI_DC, SSD7317_OLED_DC_DATA);
+	//setup CS
+	digitalWrite(SSD7317_OLED_SPI_CS, LOW);
+	//send data
+	for (uint16_t i = 0; i < SSD7317_OLED_HEIGHT * SSD7317_OLED_WIDTH / 8; i++)
+		SPI.transfer(0x00);
+	//done
+	digitalWrite(SSD7317_OLED_SPI_CS, HIGH);
+#endif
+
+#ifdef OLED_I2C
 	//blank the display
 	SSD7317_OLED_WR_CMD(0x21);		//col address
 	SSD7317_OLED_WR_CMD(0x00);
@@ -123,40 +202,74 @@ void SSD7317_OLED_Blank(void)
 	for (uint16_t i = 0; i < SSD7317_OLED_HEIGHT * SSD7317_OLED_WIDTH / 8; i++)
 		Wire.write(0x00);
 	Wire.endTransmission();
+#endif
 }
 
 //////////////////////////////////////////////////////////
 
 //oled manufacturer supplied init commands
+const uint8_t SSD7317_128x64_Init[] =
+{
+	0xFD, 0x12,	// Set command unlock
+	0xAE,		// Set display off
+	0xD5, 0x80,	// Set display clock divide ration/oscillator frequency
+	0x20, 0x01, // Set memory addressing mode
+	0xDA, 0x12,	// Set COM pins hardware configuration
+	0x81, 0xFF,	// Set contrast control (brightness)
+	0xAD, 0x10, // Set internal IREF enable
+	0xA0,		// Set segment remap
+	0xC8,		// Set COM output scan direction
+	0xA2, 0x00,	// Set display start line
+	0xD3, 0x10,	// Set display offset
+	0xD9, 0x32,	// Set discharge / pre-charge period
+	0xDB, 0x30, // Set VCOM deselect level
+	0xA8, 0x3F,	// Set multiplex ratio
+	0xA4,		// Set entire display off
+	0xA6,		// Set normal display
+	0xD5, 0x80,	// Touch function set 1
+	0x31, 0xD0,	// Touch function set 2
+	0x34, 0x08, // Touch function set 3
+	0x37, 0x01,	// Touch function set 4
+	0x36, 0x0F, // Touch function set 5
 #if (SSD7317_TOUCH_I2C_ADDR == 0x53)
-const uint8_t SSD7317_128x64_Init[] =
-{
-	0xFD, 0x12, 0xAE, 0xAD, 0x00, 0xA8, 0x3F, 0xD3, 0x10,
-	0xA2, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x8F, 0xA4,
-	0xA6, 0xD5, 0x80, 0xD9, 0x32, 0xDB, 0x30, 0x31, 0xD0,
-	0x34, 0x0F, 0x37, 0x01, 0x36, 0x0F, 0x35, 0x0A,
-	0x20, 0x01, 0xAF
-};
+	0x35, 0x0A, // Touch function set 6
+#elif (SSD7317_TOUCH_I2C_ADDR == 0x5B)
+	0x35, 0x0B, // Touch function set 6
 #endif
-#if (SSD7317_TOUCH_I2C_ADDR == 0x5B)
-const uint8_t SSD7317_128x64_Init[] =
-{
-	0xFD, 0x12, 0xAE, 0xAD, 0x00, 0xA8, 0x3F, 0xD3, 0x10,
-	0xA2, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0x8F, 0xA4,
-	0xA6, 0xD5, 0x80, 0xD9, 0x32, 0xDB, 0x30, 0x31, 0xD0,
-	0x34, 0x0F, 0x37, 0x01, 0x36, 0x0F, 0x35, 0x0B,
-	0x20, 0x01, 0xAF
+	0xA1, 		// mirror along x axis
+	0xAF		// Set display ON
 };
-#endif
 
 static void SSD7317_OLED_Setup(void)
 {
 	//initialise the oled driver ic
 	//send the init commands
 	for (uint8_t i = 0; i < sizeof(SSD7317_128x64_Init); i++)
+	{
+#ifdef OLED_SPI
+		SSD7317_OLED_DISP_SPI4_WR(SSD7317_128x64_Init[i], SSD7317_OLED_DC_CMD);
+#endif
+#ifdef OLED_I2C
 		SSD7317_OLED_WR_CMD(SSD7317_128x64_Init[i]);
+#endif
+	}
 }
 
+#ifdef OLED_SPI
+static void SSD7317_OLED_DISP_SPI4_WR(unsigned char data, unsigned char DC)
+{
+	//write a byte of data to the oled controller ic
+	//setup D/C# bit
+	digitalWrite(SSD7317_OLED_SPI_DC, SSD7317_OLED_DC_CMD);
+	//setup CS
+	digitalWrite(SSD7317_OLED_SPI_CS, LOW);
+	//send data (also controls CS)
+	SPI.transfer(data);
+	//done
+	digitalWrite(SSD7317_OLED_SPI_CS, HIGH);
+}
+#endif
+#ifdef OLED_I2C
 static void SSD7317_OLED_WR_CMD(unsigned char command)
 {
 	//send command
@@ -167,5 +280,4 @@ static void SSD7317_OLED_WR_CMD(unsigned char command)
 	Wire.write(data, 2);
 	Wire.endTransmission();
 }
-
 #endif

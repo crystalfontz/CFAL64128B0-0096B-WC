@@ -15,6 +15,14 @@
 #define OLED_SPI
 //#define OLED_I2C
 
+// TOUCH INTERFACE SELECTION
+// The BS3 pin on the module selects touch I2C or SPI interface mode:
+// SPI: BS3 = low (gnd)
+// I2C: BS3 = high (3.3v)
+// One of the following must be enabled.
+//#define TOUCH_SPI
+#define TOUCH_I2C
+
 // OLED I2C ADDRESS SELECTION
 // If using the OLED in I2C mode, the D/C pin selects one of two addresses:
 // D/C low = 0x3C
@@ -22,14 +30,6 @@
 // One of the following must be enabled.
 #define SSD7317_OLED_I2C_ADDR	(0x3C)
 //#define SSD7317_OLED_I2C_ADDR	(0x3D)
-
-// TOUCH INTERFACE SELECTION
-// The BS3 pin on the module selects touch I2C or SPI interface mode:
-// SPI: BS3 = low (gnd)
-// I2C: BS3 = high (3.3v)
-// One of the following must be enabled.
-#define TOUCH_I2C
-//#define TOUCH_SPI
 
 // TOUCH I2C ADDRESS SELECTION
 // If using the touch panel in I2C mode, the touch I2C base address is set

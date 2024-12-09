@@ -45,11 +45,18 @@
 
 #include "prefs.h"
 
-#ifdef TOUCH_SPI
-
 #include <Arduino.h>
+
+#ifdef TOUCH_SPI
 #include <SPI.h>
-#include "ssd7317_touch_spi.h"
+#endif
+#ifdef TOUCH_I2C
+#include <Wire.h>
+#define SOFT_I2C_READ(a)			((a) << 1)
+#define SOFT_I2C_WRITE(a)			(((a) << 1) | 0x01)
+#endif
+
+#include "ssd7317_touch.h"
 #include "ssd7317_touch_fwblob.h"
 
 //enable to output some debugging information over serial/usb
@@ -72,9 +79,14 @@ static void SSD7317_Touch_Setup(void);
 static void SSD7317_Touch_IRQ(void);
 static void SSD7317_Touch_Process(uint8_t *data);
 uint16_t SSD7317_TIC_CPU_BurstRead(uint16_t address, uint8_t data[], uint16_t num);
+#ifdef TOUCH_SPI
 uint16_t SSD7317_TIC_CPU_RegRead();
+#endif
 
 volatile SSD7317_InTouch_t SSD7317_Gesture_Data;
+#ifdef TOUCH_I2C
+volatile bool SSD7317_TIC_UseHardwareI2C = false;
+#endif
 volatile bool SSD7317_TouchData_Waiting = false;
 
 //////////////////////////////////////////////////////////
@@ -82,19 +94,36 @@ volatile bool SSD7317_TouchData_Waiting = false;
 void SSD7317_Touch_Init(void)
 {
 	//vars
+#ifdef TOUCH_I2C
+	SSD7317_TIC_UseHardwareI2C = false;
+#endif
+
 	SSD7317_TouchData_Waiting = false;
 
 	//pin setup
 	LOG_LN("SSD7317_Touch_Init()");
+#ifdef TOUCH_I2C
+	digitalWrite(SSD7317_TOUCH_SCL, HIGH);
+	pinMode(SSD7317_TOUCH_SCL, OUTPUT);
+	digitalWrite(SSD7317_TOUCH_SDA, HIGH);
+	pinMode(SSD7317_TOUCH_SDA, OUTPUT);
+#endif
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
 	pinMode(SSD7317_TOUCH_CS, OUTPUT);
 	digitalWrite(SSD7317_TOUCH_RST, HIGH);
 	pinMode(SSD7317_TOUCH_RST, OUTPUT);
 	pinMode(SSD7317_TOUCH_IRQ, INPUT_PULLUP);
 
+#ifdef TOUCH_SPI
 	//spi setup
 	SPI.begin();
 	SPI.beginTransaction(SPISettings(SSD7317_TOUCH_SPI_FREQ, MSBFIRST, SPI_MODE0));
+#endif
+#ifdef TOUCH_I2C
+	//i2c setup
+	//we are using software i2c master mode
+	// so nothing to do here for now
+#endif
 
 	//reset
 	digitalWrite(SSD7317_TOUCH_RST, LOW);
@@ -116,6 +145,20 @@ void SSD7317_Touch_Init(void)
 	LOG_LN("SSD7317_Touch_Init() done");
 }
 
+#ifdef TOUCH_I2C
+void SSD7317_Touch_HWI2C(bool enable)
+{
+	//Wire.begin(), Wire.end() are done outside of here
+	SSD7317_TIC_UseHardwareI2C = enable;
+	if (!enable)
+	{
+		digitalWrite(SSD7317_TOUCH_SCL, HIGH);
+		pinMode(SSD7317_TOUCH_SCL, OUTPUT);
+		digitalWrite(SSD7317_TOUCH_SDA, HIGH);
+		pinMode(SSD7317_TOUCH_SDA, OUTPUT);
+	}
+}
+#endif
 
 //////////////////////////////////////////////////////////
 
@@ -134,9 +177,10 @@ void SSD7317_Touch_Handle(void)
 	//reset flag
 	SSD7317_TouchData_Waiting = false;
 
+#ifdef TOUCH_SPI
 	//read status
 	SSD7317_TIC_CPU_RegRead();
-
+#endif
 	//read touch status 2 bytes first
 	SSD7317_TIC_CPU_BurstRead(0x0AF0, snl, 2);
 	//the touch controller can report more than one touch at a time
@@ -158,23 +202,116 @@ void SSD7317_Touch_Handle(void)
 	}
 }
 
-//////////////////////////////////////////////////////////
-
-uint16_t SSD7317_TIC_CPU_RegRead(void)
+#ifdef TOUCH_I2C
+inline void SSD7317_TIC_I2C_Delay()
 {
-	uint16_t ret = 0;
-	digitalWrite(SSD7317_TOUCH_CS, LOW);
-	SPI.transfer(0x03);
-	SPI.transfer(0x00);
-	SPI.transfer(0x00);
-	ret |= SPI.transfer(0xFF);
-	ret |= SPI.transfer(0xFF) << 8;
-	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+	_NOP(); _NOP();
+}
+
+void SSD7317_TIC_Start()
+{
+	//software i2c start
+	SSD7317_TOUCH_SDA_SET;
+	SSD7317_TIC_I2C_Delay();
+	SSD7317_TOUCH_SCL_SET;
+	SSD7317_TIC_I2C_Delay();
+	SSD7317_TOUCH_SDA_CLR;
+	SSD7317_TIC_I2C_Delay();
+	SSD7317_TOUCH_SCL_CLR;
+	SSD7317_TIC_I2C_Delay();
+}
+
+void SSD7317_TIC_Stop()
+{
+	//software i2c stop
+	SSD7317_TOUCH_SCL_CLR;
+	SSD7317_TIC_I2C_Delay();
+	SSD7317_TOUCH_SDA_CLR;
+	SSD7317_TIC_I2C_Delay();
+	SSD7317_TOUCH_SCL_SET;
+	SSD7317_TIC_I2C_Delay();
+	SSD7317_TOUCH_SDA_SET;
+	SSD7317_TIC_I2C_Delay();
+}
+
+static inline uint8_t SSD7317_TOUCH_SDA_RD()
+{
+	//read SDA pin level
+	uint8_t ret;
+	pinMode(SSD7317_TOUCH_SDA, INPUT);
+	ret = digitalRead(SSD7317_TOUCH_SDA);
+	pinMode(SSD7317_TOUCH_SDA, OUTPUT);
 	return ret;
 }
 
+void SSD7317_TIC_nByte_WR(uint8_t data[], uint16_t num)
+{
+	//software i2c write data
+	uint8_t bitPos;
+	uint16_t i;
+	for (i = 0; i < num; i++)
+	{
+		//Output 8-bit data, from MSB to LSB
+		for (bitPos = 0x80; bitPos >= 0x01; bitPos >>= 1)
+		{
+			SSD7317_TOUCH_SCL_CLR;
+			if ((bitPos & data[i]) > 0)
+				SSD7317_TOUCH_SDA_SET;
+			else
+				SSD7317_TOUCH_SDA_CLR;
+			SSD7317_TIC_I2C_Delay();
+			SSD7317_TOUCH_SCL_SET;
+			SSD7317_TIC_I2C_Delay();
+		}
+		SSD7317_TOUCH_SCL_CLR;
+		SSD7317_TIC_I2C_Delay();
+		SSD7317_TOUCH_SCL_SET; // for ACK
+		SSD7317_TIC_I2C_Delay();
+		SSD7317_TOUCH_SCL_CLR;
+	}
+}
+
+void SSD7317_TIC_nByte_RD(uint8_t data[], uint16_t num)
+{
+	//software i2c read data
+	uint8_t bitPos;
+	uint16_t i;
+	for (i = 0; i < num; i++)
+	{
+		data[i] = 0x00;
+
+		for (bitPos = 0x80; bitPos >= 0x01; bitPos >>= 1)
+		{
+			SSD7317_TOUCH_SCL_CLR;
+			SSD7317_TIC_I2C_Delay();
+			if (SSD7317_TOUCH_SDA_RD() == HIGH)
+				data[i] |= bitPos;
+			SSD7317_TOUCH_SCL_SET;
+			SSD7317_TIC_I2C_Delay();
+		}
+		SSD7317_TOUCH_SCL_CLR;
+		SSD7317_TIC_I2C_Delay();
+
+		if (i + 1 == num)
+			SSD7317_TOUCH_SDA_SET;	// NAK for last byte
+		else
+			SSD7317_TOUCH_SDA_CLR;
+
+		// for acking
+		SSD7317_TIC_I2C_Delay();
+		SSD7317_TOUCH_SCL_SET;
+		SSD7317_TIC_I2C_Delay();
+		SSD7317_TOUCH_SCL_CLR;
+		SSD7317_TOUCH_SDA_SET;
+	}
+}
+#endif
+
+//////////////////////////////////////////////////////////
+
 uint16_t SSD7317_TIC_BIOS_RegRead()
 {
+#ifdef TOUCH_SPI
 	uint16_t ret = 0;
 	digitalWrite(SSD7317_TOUCH_CS, LOW);
 	SPI.transfer(0x03);
@@ -183,11 +320,38 @@ uint16_t SSD7317_TIC_BIOS_RegRead()
 	ret |= SPI.transfer(0xFF);
 	ret |= SPI.transfer(0xFF) << 8;
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+#endif
+#ifdef TOUCH_I2C
+	uint16_t address = 0x0AF0;
+	uint8_t addr[2];
+	uint8_t data[2];
+	uint16_t ret;
+
+	addr[0] = (uint8_t) ((address >> 0) & 0xFF);
+	addr[1] = (uint8_t) ((address >> 8) & 0xFF);
+
+	SSD7317_TIC_Start();
+	data[0] = SOFT_I2C_READ(SSD7317_TOUCH_I2C_ADDR);
+	SSD7317_TIC_nByte_WR(data, 1);
+	SSD7317_TIC_nByte_WR(addr, 2);
+	SSD7317_TIC_Stop();
+
+	delayMicroseconds(80);
+
+	SSD7317_TIC_Start();
+	data[0] = SOFT_I2C_WRITE(SSD7317_TOUCH_I2C_ADDR);
+	SSD7317_TIC_nByte_WR(data, 1);
+	SSD7317_TIC_nByte_RD(data, 2);
+	SSD7317_TIC_Stop();
+
+	ret = (data[1] << 8) + data[0];
+#endif
 	return ret;
 }
 
 uint16_t SSD7317_TIC_BIOS_RegWrite(uint16_t address)
 {
+#ifdef TOUCH_SPI
 	uint8_t addr[2];
 	addr[0] = (uint8_t)((address >> 8) & 0xFF);
 	addr[1] = (uint8_t)((address >> 0) & 0xFF);
@@ -198,11 +362,26 @@ uint16_t SSD7317_TIC_BIOS_RegWrite(uint16_t address)
 	SPI.transfer(addr[1]);
 	SPI.transfer(addr[0]);
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+
+#endif
+#ifdef TOUCH_I2C
+	uint8_t wd8[3];
+
+	wd8[0] = SOFT_I2C_READ(SSD7317_TOUCH_I2C_ADDR);
+	wd8[1] = (uint8_t) ((address >> 0) & 0xFF);
+	wd8[2] = (uint8_t) ((address >> 8) & 0xFF);
+
+	SSD7317_TIC_Start();
+	SSD7317_TIC_nByte_WR(wd8, 3);
+	SSD7317_TIC_Stop();
+
+#endif
 	return 0;
 }
 
 uint16_t SSD7317_TIC_BIOS_BurstWrite(uint16_t address, uint8_t data[], uint16_t num)
 {
+#ifdef TOUCH_SPI
 	uint8_t addr[2];
 	uint16_t i;
 	addr[0] = (uint8_t)((address >> 8) & 0xFF);
@@ -214,11 +393,28 @@ uint16_t SSD7317_TIC_BIOS_BurstWrite(uint16_t address, uint8_t data[], uint16_t 
 	for(i = 0; i < num; i++)
 		SPI.transfer(data[i]);
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+
+#endif
+#ifdef TOUCH_I2C
+	uint8_t wd8[3];
+
+	wd8[0] = SOFT_I2C_READ(SSD7317_TOUCH_I2C_ADDR | 0x04);
+	wd8[1] = (uint8_t) ((address >> 0) & 0xFF);
+	wd8[2] = (uint8_t) ((address >> 8) & 0xFF);
+
+	SSD7317_TIC_Start();
+	SSD7317_TIC_nByte_WR(wd8, 3);
+	SSD7317_TIC_nByte_WR(data, num);
+	SSD7317_TIC_Stop();
+
+#endif
+
 	return 0;
 }
 
 uint16_t SSD7317_TIC_BIOS_BurstWrite_PROGMEM(uint16_t address, uint8_t data[], uint16_t num)
 {
+#ifdef TOUCH_SPI
 	//modified to read data from PROGMEM
 	uint8_t addr[2];
 	uint16_t i;
@@ -234,11 +430,34 @@ uint16_t SSD7317_TIC_BIOS_BurstWrite_PROGMEM(uint16_t address, uint8_t data[], u
 		SPI.transfer(addr[0]);
 	}
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+
+#endif
+#ifdef TOUCH_I2C
+	//modified to read data from PROGMEM
+	uint8_t wd8[3];
+	uint16_t i;
+
+	wd8[0] = SOFT_I2C_READ(SSD7317_TOUCH_I2C_ADDR | 0x04);
+	wd8[1] = (uint8_t) ((address >> 0) & 0xFF);
+	wd8[2] = (uint8_t) ((address >> 8) & 0xFF);
+
+	SSD7317_TIC_Start();
+	SSD7317_TIC_nByte_WR(wd8, 3);
+	for (i = 0; i < num; i++)
+	{
+		wd8[0] = pgm_read_byte_near(data+i);
+		SSD7317_TIC_nByte_WR(wd8, 1);
+	}
+	SSD7317_TIC_Stop();
+
+#endif
+
 	return 0;
 }
 
 uint16_t SSD7317_TIC_BIOS_BurstRead(uint16_t address, uint8_t data[], uint16_t num)
 {
+#ifdef TOUCH_SPI
 	uint8_t addr[2];
 	uint16_t i;
 	addr[0] = (uint8_t)((address >> 8) & 0xFF);
@@ -251,11 +470,33 @@ uint16_t SSD7317_TIC_BIOS_BurstRead(uint16_t address, uint8_t data[], uint16_t n
 	for(i = 0; i < num; i++)
 		data[i] = SPI.transfer(0xFF);
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
-	return 0;
+
+#endif
+#ifdef TOUCH_I2C
+	uint8_t wd8[3];
+
+	wd8[0] = SOFT_I2C_READ(SSD7317_TOUCH_I2C_ADDR | 0x04);
+	wd8[1] = (uint8_t) ((address >> 0) & 0xFF);
+	wd8[2] = (uint8_t) ((address >> 8) & 0xFF);
+
+	SSD7317_TIC_Start();
+	SSD7317_TIC_nByte_WR(wd8, 3);
+	SSD7317_TIC_Stop();
+
+	delayMicroseconds(80);
+
+	wd8[0] = SOFT_I2C_WRITE(SSD7317_TOUCH_I2C_ADDR | 0x04);
+	SSD7317_TIC_Start();
+	SSD7317_TIC_nByte_WR(wd8, 1);
+	SSD7317_TIC_nByte_RD(data, num);
+	SSD7317_TIC_Stop();
+
+#endif	return 0;
 }
 
 uint16_t SSD7317_TIC_CPU_BurstRead(uint16_t address, uint8_t data[], uint16_t num)
 {
+#ifdef TOUCH_SPI
 	uint8_t addr[2];
 	uint16_t i;
 
@@ -279,11 +520,52 @@ uint16_t SSD7317_TIC_CPU_BurstRead(uint16_t address, uint8_t data[], uint16_t nu
 	for(i = 0; i < num; i++)
 		data[i] = SPI.transfer(0xFF);
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+
+#endif
+#ifdef TOUCH_I2C
+	uint8_t wd8[3];
+
+	if (SSD7317_TIC_UseHardwareI2C)
+	{
+		//use hardware I2C
+		wd8[0] = (uint8_t) ((address >> 0) & 0xFF);
+		wd8[1] = (uint8_t) ((address >> 8) & 0xFF);
+		Wire.beginTransmission(SSD7317_TOUCH_I2C_ADDR);
+		Wire.write(wd8, 2);
+		Wire.endTransmission();
+
+		delayMicroseconds(80);
+
+		Wire.requestFrom(SSD7317_TOUCH_I2C_ADDR, num);
+		while (Wire.available() < (int)num) {}
+		Wire.readBytes(data, num);
+	}
+	else
+	{
+		//use software I2C
+		wd8[0] = SOFT_I2C_READ(SSD7317_TOUCH_I2C_ADDR);
+		wd8[1] = (uint8_t) ((address >> 0) & 0xFF);
+		wd8[2] = (uint8_t) ((address >> 8) & 0xFF);
+		SSD7317_TIC_Start();
+		SSD7317_TIC_nByte_WR(wd8, 3);
+		SSD7317_TIC_Stop();
+
+		delayMicroseconds(80);
+
+		wd8[0] = SOFT_I2C_WRITE(SSD7317_TOUCH_I2C_ADDR);
+		SSD7317_TIC_Start();
+		SSD7317_TIC_nByte_WR(wd8, 1);
+		SSD7317_TIC_nByte_RD(data, num);
+		SSD7317_TIC_Stop();
+	}
+
+#endif
 	return 0;
 }
 
 uint16_t SSD7317_TIC_CPU_BurstWrite(uint16_t address, uint8_t data[], uint16_t num)
 {
+#ifdef TOUCH_SPI
 	uint8_t addr[2];
 	uint16_t i;
 	addr[0] = (uint8_t)((address >> 8) & 0xFF);
@@ -297,8 +579,39 @@ uint16_t SSD7317_TIC_CPU_BurstWrite(uint16_t address, uint8_t data[], uint16_t n
 	for(i = 0; i < num; i++)
 		SPI.transfer(data[i]);
 	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+
+#endif
+#ifdef TOUCH_I2C
+	uint8_t wd8[3];
+
+	wd8[0] = SOFT_I2C_READ(SSD7317_TOUCH_I2C_ADDR);
+	wd8[1] = (uint8_t) ((address >> 0) & 0xFF);
+	wd8[2] = (uint8_t) ((address >> 8) & 0xFF);
+
+	SSD7317_TIC_Start();
+	SSD7317_TIC_nByte_WR(wd8, 3);
+	SSD7317_TIC_nByte_WR(data, num);
+	SSD7317_TIC_Stop();
+
+#endif
 	return 0;
 }
+
+#ifdef TOUCH_SPI
+uint16_t SSD7317_TIC_CPU_RegRead(void)
+{
+	uint16_t ret = 0;
+	digitalWrite(SSD7317_TOUCH_CS, LOW);
+	SPI.transfer(0x03);
+	SPI.transfer(0x00);
+	SPI.transfer(0x00);
+	ret |= SPI.transfer(0xFF);
+	ret |= SPI.transfer(0xFF) << 8;
+	digitalWrite(SSD7317_TOUCH_CS, HIGH);
+	return ret;
+}
+#endif
+
 
 //////////////////////////////////////////////////////////
 
@@ -327,7 +640,9 @@ static void SSD7317_Touch_Setup(void)
 	SSD7317_TIC_BIOS_RegWrite(RAM_BLOCK_PM);
 	delayMicroseconds(300);
 	for (i = 0; i < 24; i++)
+	{
 		SSD7317_TIC_BIOS_BurstWrite_PROGMEM(0x0002 * i, (uint8_t*)SSD7317_PM_Content + SSD7317_TOUCH_FW_PAGE_SIZE * i, SSD7317_TOUCH_FW_PAGE_SIZE);
+	}
 	LOG_LN("SSD7317_Touch_Setup() - Step3");
 
 	//write TM firmware blob
@@ -348,7 +663,9 @@ static void SSD7317_Touch_Setup(void)
 	SSD7317_TIC_BIOS_RegWrite(RAM_BLOCK_DM);
 	delayMicroseconds(300);
 	for (i = 0; i < 4; i++)
+	{
 		SSD7317_TIC_BIOS_BurstWrite_PROGMEM(0x0002 * i, (uint8_t*)SSD7317_DM_Content + SSD7317_TOUCH_FW_PAGE_SIZE * i, SSD7317_TOUCH_FW_PAGE_SIZE);
+	}
 	LOG_LN("SSD7317_Touch_Setup() - Step5");
 
 	//firware has been written, do some more misc inits
@@ -372,6 +689,11 @@ static void SSD7317_Touch_Setup(void)
     while(SSD7317_TOUCH_IRQ_RD == HIGH)	{ _NOP(); }
 
 	//firmware has been loaded, last inits
+#ifdef TOUCH_I2C
+	SSD7317_TIC_CPU_BurstRead(0x0AF0, wd8, 2);
+	SSD7317_TIC_CPU_BurstRead(0x0AF1, wd8, 6);
+	delay(40);
+#endif
 	wd8[0] = 0x00; wd8[1] = 0x00;
 	SSD7317_TIC_CPU_BurstWrite(0x0043, wd8, 2);
 
@@ -487,5 +809,3 @@ void SSD7317_ReportingMode_Set(uint16_t mode)
 }
 
 //////////////////////////////////////////////////////////
-
-#endif
